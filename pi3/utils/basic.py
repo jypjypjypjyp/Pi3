@@ -8,42 +8,75 @@ from torchvision import transforms
 from plyfile import PlyData, PlyElement
 import numpy as np
 
-def load_images_as_tensor(path='data/truck', interval=1, PIXEL_LIMIT=255000):
+def load_images_as_tensor(path='data/truck', interval=1, start=0, num=4, PIXEL_LIMIT=255000):
     """
     Loads images from a directory or video, resizes them to a uniform size,
     then converts and stacks them into a single [N, 3, H, W] PyTorch tensor.
+    
+    Args:
+        path: Path to directory containing images or video file
+        interval: Interval between frames to load
+        start: Starting index for frame selection
+        num: Number of frames to load (selected frames count)
+        PIXEL_LIMIT: Maximum number of pixels per image
     """
-    sources = [] 
+    sources = []
+    selected = []
     
     # --- 1. Load image paths or video frames ---
     if osp.isdir(path):
         print(f"Loading images from directory: {path}")
         filenames = sorted([x for x in os.listdir(path) if x.lower().endswith(('.png', '.jpg', '.jpeg'))])
-        for i in range(0, len(filenames), interval):
-            img_path = osp.join(path, filenames[i])
-            try:
-                sources.append(Image.open(img_path).convert('RGB'))
-            except Exception as e:
-                print(f"Could not load image {filenames[i]}: {e}")
+        
+        # Calculate the indices to load based on start, num, and interval
+        # For example: start=0, num=4, interval=4 -> indices = [0, 4, 8, 12]
+        max_index = start + (num - 1) * interval
+        if max_index >= len(filenames):
+            print(f"Warning: Requested frames exceed available frames. Loading up to index {len(filenames)-1}.")
+            # Adjust num to the maximum possible
+            num = max(0, (len(filenames) - start + interval - 1) // interval)
+        
+        for i in range(num):
+            idx = start + i * interval
+            if idx < len(filenames):
+                img_path = osp.join(path, filenames[idx])
+                try:
+                    sources.append(Image.open(img_path).convert('RGB'))
+                    selected.append(idx)
+                except Exception as e:
+                    print(f"Could not load image {filenames[idx]}: {e}")
     elif path.lower().endswith('.mp4'):
         print(f"Loading frames from video: {path}")
         cap = cv2.VideoCapture(path)
         if not cap.isOpened(): raise IOError(f"Cannot open video file: {path}")
-        frame_idx = 0
-        while True:
-            ret, frame = cap.read()
-            if not ret: break
-            if frame_idx % interval == 0:
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                sources.append(Image.fromarray(rgb_frame))
-            frame_idx += 1
+        
+        # Get total frame count
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        max_index = start + (num - 1) * interval
+        if max_index >= total_frames:
+            print(f"Warning: Requested frames exceed available frames. Loading up to index {total_frames-1}.")
+            # Adjust num to the maximum possible
+            num = max(0, (total_frames - start + interval - 1) // interval)
+        
+        # Load frames based on start, num, and interval
+        for i in range(num):
+            frame_idx = start + i * interval
+            if frame_idx < total_frames:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
+                ret, frame = cap.read()
+                if ret:
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    sources.append(Image.fromarray(rgb_frame))
+                    selected.append(frame_idx)
+                else:
+                    print(f"Could not read frame at index {frame_idx}")
         cap.release()
     else:
         raise ValueError(f"Unsupported path. Must be a directory or a .mp4 file: {path}")
 
     if not sources:
         print("No images found or loaded.")
-        return torch.empty(0)
+        return torch.empty(0), [], (0, 0, 0, 0)
 
     print(f"Found {len(sources)} images/frames. Processing...")
 
@@ -77,10 +110,10 @@ def load_images_as_tensor(path='data/truck', interval=1, PIXEL_LIMIT=255000):
 
     if not tensor_list:
         print("No images were successfully processed.")
-        return torch.empty(0)
+        return torch.empty(0), [], (W_orig, H_orig, W_target, H_target)
 
     # --- 4. Stack the list of tensors into a single [N, C, H, W] batch tensor ---
-    return torch.stack(tensor_list, dim=0)
+    return torch.stack(tensor_list, dim=0), selected, (W_orig, H_orig, W_target, H_target)
 
 
 def tensor_to_pil(tensor):

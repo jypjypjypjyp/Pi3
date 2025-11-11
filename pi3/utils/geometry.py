@@ -121,9 +121,8 @@ def homogenize_points(
 
 
 def get_gt_warp(depth1, depth2, T_1to2, K1, K2, depth_interpolation_mode = 'bilinear', relative_depth_error_threshold = 0.05, H = None, W = None):
-    
     if H is None:
-        B,H,W = depth1.shape
+        B, H, W = depth1.shape
     else:
         B = depth1.shape[0]
     with torch.no_grad():
@@ -344,7 +343,7 @@ def opencv_camera_to_plucker(poses, K, H, W):
     return plucker_ray
 
 
-def depth_edge(depth: torch.Tensor, atol: float = None, rtol: float = None, kernel_size: int = 3, mask: torch.Tensor = None) -> torch.BoolTensor:
+def depth_edge(depth: torch.Tensor, atol: float|None = None, rtol: float|None = None, kernel_size: int = 3, mask: torch.Tensor|None = None) -> torch.Tensor:
     """
     Compute the edge mask of a depth map. The edge is defined as the pixels whose neighbors have a large difference in depth.
     
