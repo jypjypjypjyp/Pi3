@@ -214,3 +214,7 @@ class Pi3(nn.Module, PyTorchModelHubMixin):
             conf=conf,
             camera_poses=camera_poses,
         )
+
+    @torch.no_grad()
+    def infer(self, imgs):
+        return self.forward(imgs)
